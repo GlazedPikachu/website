@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Shipping Cost Allocator</title>
+<style>
+  :root {
+    --bg: #faf9f7;
+    --panel: #ffffff;
+    --ink: #2b2b2b;
+    --muted: #6b6b6b;
+    --accent: #c1502e;
+    --accent-light: #f2e3dc;
+    --border: #e4e0da;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    padding: 24px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  p.sub { color: var(--muted); margin-top: 0; margin-bottom: 20px; font-size: 14px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+    padding: 8px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  td { padding: 6px 8px; }
+  input[type=text], input[type=number] {
+    width: 100%;
+    padding: 7px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    background: #fff;
+  }
+  input:focus { outline: 2px solid var(--accent-light); border-color: var(--accent); }
+  .rm-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 4px 8px;
+  }
+  .rm-btn:hover { color: var(--accent); }
+  .row-controls { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+  .add-btn {
+    background: none;
+    border: 1px dashed var(--border);
+    color: var(--accent);
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .add-btn:hover { border-color: var(--accent); background: var(--accent-light); }
+  .shipping-row { display: flex; align-items: center; gap: 10px; }
+  .shipping-row label { font-size: 14px; color: var(--muted); white-space: nowrap; }
+  .shipping-row input { max-width: 160px; }
+  .results h2 { font-size: 16px; margin-top: 0; }
+  .results table td, .results table th { font-size: 14px; }
+  .results tfoot td { border-top: 1px solid var(--border); font-weight: 600; padding-top: 10px; }
+  .muted-cell { color: var(--muted); font-size: 13px; }
+  .highlight { color: var(--accent); font-weight: 600; }
+  .empty-note { color: var(--muted); font-size: 13px; font-style: italic; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Shipping Cost Allocator</h1>
+  <p class="sub">Enter each part's unit price and quantity from a shipment, plus the shipping &amp; handling fee. The fee is distributed across parts proportionally by total dollar value (more expensive line items absorb more of the shipping cost).</p>
+
+  <div class="panel">
+    <div class="shipping-row" style="margin-bottom:16px;">
+      <label for="rateInput">EUR&nbsp;→&nbsp;USD rate</label>
+      <input type="number" id="rateInput" step="0.0001" min="0" value="1.1550" oninput="calculate()">
+      <span id="rateStatus" class="muted-cell">using fallback rate</span>
+      <button class="add-btn" style="margin-left:auto;" onclick="fetchRate()">Refresh rate</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:32%">Part name</th>
+          <th style="width:20%">Unit price</th>
+          <th style="width:14%">Currency</th>
+          <th style="width:14%">Quantity</th>
+          <th style="width:10%"></th>
+        </tr>
+      </thead>
+      <tbody id="partsBody"></tbody>
+    </table>
+    <div class="row-controls">
+      <button class="add-btn" onclick="addRow()">+ Add part</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="shipping-row">
+      <label for="shippingFee">Shipping &amp; handling fee for this shipment ($)</label>
+      <input type="number" id="shippingFee" step="0.01" min="0" value="0" oninput="calculate()">
+    </div>
+  </div>
+
+  <div class="panel results">
+    <h2>Landed price per part</h2>
+    <div id="resultsArea"></div>
+  </div>
+</div>
+
+<script>
+let rows = [];
+let idCounter = 0;
+
+function getRate() {
+  return parseFloat(document.getElementById('rateInput').value) || 0;
+}
+
+async function fetchRate() {
+  const status = document.getElementById('rateStatus');
+  status.textContent = 'fetching…';
+  try {
+    const res = await fetch('https://api.frankfurter.dev/v1/latest?base=EUR&symbols=USD');
+    if (!res.ok) throw new Error('bad response');
+    const data = await res.json();
+    const rate = data && data.rates && data.rates.USD;
+    if (!rate) throw new Error('no rate in response');
+    document.getElementById('rateInput').value = rate.toFixed(4);
+    status.textContent = `live rate as of ${data.date}`;
+    calculate();
+  } catch (err) {
+    status.textContent = 'could not fetch — using manual rate';
+  }
+}
+
+function addRow(name = "", price = "", qty = "", currency = "USD") {
+  const id = idCounter++;
+  rows.push({ id, name, price, qty, currency });
+  renderRows();
+}
+
+function removeRow(id) {
+  rows = rows.filter(r => r.id !== id);
+  renderRows();
+}
+
+function updateRow(id, field, value) {
+  const row = rows.find(r => r.id === id);
+  if (row) row[field] = value;
+  calculate();
+}
+
+function renderRows() {
+  const body = document.getElementById('partsBody');
+  body.innerHTML = '';
+  rows.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="text" placeholder="e.g. Bracket A" value="${row.name}" oninput="updateRow(${row.id},'name',this.value)"></td>
+      <td><input type="number" step="0.01" min="0" placeholder="0.00" value="${row.price}" oninput="updateRow(${row.id},'price',this.value)"></td>
+      <td>
+        <select onchange="updateRow(${row.id},'currency',this.value)">
+          <option value="USD" ${row.currency === 'USD' ? 'selected' : ''}>USD</option>
+          <option value="EUR" ${row.currency === 'EUR' ? 'selected' : ''}>EUR</option>
+        </select>
+      </td>
+      <td><input type="number" step="1" min="0" placeholder="0" value="${row.qty}" oninput="updateRow(${row.id},'qty',this.value)"></td>
+      <td><button class="rm-btn" onclick="removeRow(${row.id})" title="Remove">✕</button></td>
+    `;
+    body.appendChild(tr);
+  });
+  calculate();
+}
+
+function calculate() {
+  const shippingFee = parseFloat(document.getElementById('shippingFee').value) || 0;
+  const rate = getRate();
+  const resultsArea = document.getElementById('resultsArea');
+
+  const validRows = rows
+    .map(r => {
+      const priceRaw = parseFloat(r.price) || 0;
+      const priceUsd = r.currency === 'EUR' ? priceRaw * rate : priceRaw;
+      return { ...r, priceRaw, priceUsd, qty: parseFloat(r.qty) || 0 };
+    })
+    .filter(r => r.priceUsd > 0 && r.qty > 0);
+
+  if (validRows.length === 0) {
+    resultsArea.innerHTML = '<p class="empty-note">Add at least one part with a price and quantity to see results.</p>';
+    return;
+  }
+
+  const totalValue = validRows.reduce((sum, r) => sum + r.priceUsd * r.qty, 0);
+
+  let table = `
+    <table>
+      <thead>
+        <tr>
+          <th>Part</th>
+          <th>Invoice price</th>
+          <th>Unit price (USD)</th>
+          <th>Qty</th>
+          <th>Share of shipping</th>
+          <th>Shipping / unit</th>
+          <th>New unit price (USD)</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  let totalAllocated = 0;
+  let totalNewValue = 0;
+
+  validRows.forEach(r => {
+    const lineValue = r.priceUsd * r.qty;
+    const weight = totalValue > 0 ? lineValue / totalValue : 0;
+    const allocated = weight * shippingFee;
+    const shippingPerUnit = allocated / r.qty;
+    const newUnitPrice = r.priceUsd + shippingPerUnit;
+    totalAllocated += allocated;
+    totalNewValue += newUnitPrice * r.qty;
+
+    const invoiceDisplay = r.currency === 'EUR'
+      ? `€${r.priceRaw.toFixed(2)}`
+      : `$${r.priceRaw.toFixed(2)}`;
+
+    table += `
+      <tr>
+        <td>${r.name || '(unnamed part)'}</td>
+        <td class="muted-cell">${invoiceDisplay}</td>
+        <td>$${r.priceUsd.toFixed(2)}</td>
+        <td>${r.qty}</td>
+        <td>$${allocated.toFixed(2)} <span class="muted-cell">(${(weight*100).toFixed(1)}%)</span></td>
+        <td>$${shippingPerUnit.toFixed(4)}</td>
+        <td class="highlight">$${newUnitPrice.toFixed(2)}</td>
+      </tr>
+    `;
+  });
+
+  table += `
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4">Totals</td>
+          <td>$${totalAllocated.toFixed(2)}</td>
+          <td></td>
+          <td>$${totalNewValue.toFixed(2)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  `;
+
+  resultsArea.innerHTML = table;
+}
+
+// Start with a couple of blank rows for convenience
+addRow();
+addRow();
+fetchRate();
+</script>
+</body>
+</html>

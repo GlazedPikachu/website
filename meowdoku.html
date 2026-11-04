@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Meowdoku Solver</title>
+<style>
+  :root {
+    --bg: #faf7f2; --fg: #222; --muted: #6b6b6b; --card: #fff;
+    --line: #d9d4cc; --accent: #d9622b; --bad: #c0392b; --ok: #2e7d32;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1a19; --fg: #eee; --muted: #a09a94; --card: #262422;
+      --line: #3a3836; --accent: #f08a50; --bad: #ff7b6b; --ok: #7bd88a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 16px; color: var(--muted); }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 14px; margin-bottom: 14px;
+  }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  label { font-size: .9rem; color: var(--muted); }
+  select, input[type=range] { font: inherit; }
+  select {
+    padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--card); color: var(--fg);
+  }
+  button, .filebtn {
+    font: inherit; padding: 10px 14px; border-radius: 10px; border: 0;
+    background: var(--accent); color: #fff; cursor: pointer; display: inline-block;
+  }
+  button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+  input[type=file] { display: none; }
+  #stage canvas {
+    display: block; margin: 0 auto; max-width: 100%; max-height: 60vh;
+    touch-action: none; border-radius: 8px; cursor: crosshair;
+  }
+  .hint { font-size: .85rem; color: var(--muted); margin: 8px 0 0; }
+  #status { margin: 0 0 14px; font-weight: 600; }
+  #status.err { color: var(--bad); }
+  #status.ok { color: var(--ok); }
+  #grid { display: grid; width: 100%; max-width: 440px; margin: 0 auto; border: 3px solid #222; }
+  #grid .cell {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    line-height: 1; user-select: none;
+  }
+  #grid.hidecats .cell span { visibility: hidden; }
+  #cats { margin: 12px 0 0; font-size: .95rem; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--muted); }
+  pre#log {
+    white-space: pre-wrap; font: .85rem/1.5 ui-monospace, Menlo, Consolas, monospace;
+    margin: 8px 0 0;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Meowdoku Solver</h1>
+  <p class="sub">Screenshot a puzzle, pick it here, and see where the cats go. Everything runs in your browser; the image never leaves your device.</p>
+
+  <div class="card">
+    <label class="filebtn" for="file">Choose screenshot</label>
+    <input id="file" type="file" accept="image/*">
+    <div id="stage" hidden>
+      <p class="hint">Drag on the image to box just the board. The red grid should line up with the cells. Tap once to reset the box.</p>
+      <canvas id="cv"></canvas>
+      <div class="row">
+        <label>Grid size
+          <select id="size">
+            <option value="auto">Auto</option>
+            <option>4</option><option>5</option><option>6</option><option>7</option>
+            <option>8</option><option>9</option><option>10</option><option>11</option><option>12</option>
+          </select>
+        </label>
+        <label>Color tolerance <span id="tolval">25</span>
+          <input id="tol" type="range" min="5" max="80" value="25">
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <p id="status"></p>
+
+  <div class="card" id="result" hidden>
+    <div id="grid"></div>
+    <div class="row" style="justify-content:center">
+      <button class="secondary" id="toggle">Show / hide cats</button>
+    </div>
+    <p id="cats"></p>
+    <details>
+      <summary>Step-by-step reasoning</summary>
+      <pre id="log"></pre>
+    </details>
+  </div>
+</main>
+
+<script>
+// ==== SOLVER (pure logic, no DOM) ====================================
+const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+function combinations(arr, k) {
+  const out = [];
+  (function rec(start, cur) {
+    if (cur.length === k) { out.push(cur.slice()); return; }
+    for (let i = start; i < arr.length; i++) { cur.push(arr[i]); rec(i + 1, cur); cur.pop(); }
+  })(0, []);
+  return out;
+}
+
+// Brute force. regions[r][c] = region id (0..n-1). Returns up to `limit`
+// solutions, each an array: column of the cat in each row.
+function countSolutions(regions, limit = 2) {
+  const n = regions.length;
+  const cols = new Array(n).fill(-1);
+  const usedCol = new Array(n).fill(false);
+  const usedReg = new Array(n).fill(false);
+  const found = [];
+  (function place(r) {
+    if (found.length >= limit) return;
+    if (r === n) { found.push(cols.slice()); return; }
+    for (let c = 0; c < n; c++) {
+      const reg = regions[r][c];
+      if (usedCol[c] || usedReg[reg]) continue;
+      if (r > 0 && Math.abs(c - cols[r - 1]) <= 1) continue;
+      cols[r] = c; usedCol[c] = true; usedReg[reg] = true;
+      place(r + 1);
+      usedCol[c] = false; usedReg[reg] = false;
+    }
+  })(0);
+  return found;
+}
+
+// Human-style deduction with a readable log. Cells are indices r*n+c.
+class PropagationSolver {
+  constructor(regions) {
+    const n = this.n = regions.length;
+    this.regionOf = [];
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) this.regionOf.push(regions[r][c]);
+    this.cand = new Set(this.regionOf.map((_, i) => i));
+    this.cats = [];
+    this.satisfied = new Set();
+    this.log = [];
+    this.stats = {};
+    this.units = new Map();
+    for (let i = 0; i < n; i++) {
+      this.units.set("row:" + i, new Set());
+      this.units.set("col:" + i, new Set());
+    }
+    for (let idx = 0; idx < n * n; idx++) {
+      const r = Math.floor(idx / n), c = idx % n, g = this.regionOf[idx];
+      this.units.get("row:" + r).add(idx);
+      this.units.get("col:" + c).add(idx);
+      const key = "region:" + g;
+      if (!this.units.has(key)) this.units.set(key, new Set());
+      this.units.get(key).add(idx);
+    }
+  }
+  kindOf(cell, kind) {
+    if (kind === "row") return Math.floor(cell / this.n);
+    if (kind === "col") return cell % this.n;
+    return this.regionOf[cell];
+  }
+  unitKey(cell, kind) { return kind + ":" + this.kindOf(cell, kind); }
+  fmt(key) {
+    const [kind, val] = key.split(":");
+    return kind === "region" ? "region " + LETTERS[+val] : kind + " " + (+val + 1);
+  }
+  cellName(i) { return "(" + (Math.floor(i / this.n) + 1) + "," + (i % this.n + 1) + ")"; }
+  live(key) { return [...this.units.get(key)].filter(x => this.cand.has(x)); }
+  openUnits() { return [...this.units.keys()].filter(k => !this.satisfied.has(k)); }
+  bump(name) { this.stats[name] = (this.stats[name] || 0) + 1; }
+
+  killZone(cell) {
+    const n = this.n, r = Math.floor(cell / n), c = cell % n;
+    const zone = new Set();
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const rr = r + dr, cc = c + dc;
+      if (rr >= 0 && rr < n && cc >= 0 && cc < n) zone.add(rr * n + cc);
+    }
+    for (const kind of ["row", "col", "region"])
+      for (const x of this.units.get(this.unitKey(cell, kind))) zone.add(x);
+    return zone;
+  }
+  place(cell, why) {
+    const own = ["row", "col", "region"].map(k => this.unitKey(cell, k));
+    for (const x of this.killZone(cell)) this.cand.delete(x);
+    this.cats.push(cell);
+    own.forEach(u => this.satisfied.add(u));
+    this.log.push("PLACE cat at row " + (Math.floor(cell / this.n) + 1) +
+                  ", col " + (cell % this.n + 1) + ": " + why);
+  }
+  eliminate(cells, why) {
+    const hits = [...cells].filter(x => this.cand.has(x)).sort((a, b) => a - b);
+    if (!hits.length) return false;
+    hits.forEach(x => this.cand.delete(x));
+    this.log.push("  rule out " + hits.map(h => this.cellName(h)).join(", ") + ": " + why);
+    return true;
+  }
+
+  single() {
+    for (const u of this.openUnits()) {
+      const cells = this.live(u);
+      if (!cells.length) throw new Error("Contradiction: " + this.fmt(u) + " has no spot left");
+      if (cells.length === 1) { this.place(cells[0], "only spot left in " + this.fmt(u)); return true; }
+    }
+    return false;
+  }
+
+  lockedSets() {
+    const kinds = ["row", "col", "region"];
+    for (let k = 1; k <= 4; k++) {
+      for (const a of kinds) for (const b of kinds) {
+        if (a === b) continue;
+        const openA = this.openUnits().filter(u => u.startsWith(a + ":"));
+        for (const group of combinations(openA, k)) {
+          const cells = new Set();
+          group.forEach(u => this.live(u).forEach(x => cells.add(x)));
+          const touched = new Set([...cells].map(x => this.kindOf(x, b)));
+          if (touched.size !== k) continue;
+          const groupIds = new Set(group.map(u => +u.split(":")[1]));
+          const victims = [];
+          for (const t of touched)
+            for (const cell of this.live(b + ":" + t))
+              if (!groupIds.has(this.kindOf(cell, a))) victims.push(cell);
+          const names = group.map(u => this.fmt(u)).join(", ");
+          const used = [...touched].sort((x, y) => String(x) < String(y) ? -1 : 1)
+                                   .map(t => this.fmt(b + ":" + t)).join(", ");
+          if (this.eliminate(victims, names + " can only use " + used + ", so those are spoken for")) {
+            this.bump("locked set (k=" + k + ")");
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  starvation() {
+    for (const cell of [...this.cand].sort((a, b) => a - b)) {
+      const zone = this.killZone(cell);
+      const own = new Set(["row", "col", "region"].map(k => this.unitKey(cell, k)));
+      for (const u of this.openUnits()) {
+        if (own.has(u)) continue;
+        if (this.live(u).every(x => zone.has(x)))
+          return this.eliminate([cell], "a cat there would leave " + this.fmt(u) + " with no spot");
+      }
+    }
+    return false;
+  }
+
+  solve() {
+    const techniques = [["single", this.single], ["locked set", this.lockedSets], ["starvation", this.starvation]];
+    while (this.cats.length < this.n) {
+      let progressed = false;
+      for (const [name, fn] of techniques) {
+        if (fn.call(this)) {
+          if (name !== "locked set") this.bump(name);
+          progressed = true;
+          break;
+        }
+      }
+      if (!progressed) return false;   // stuck: would need guessing
+    }
+    return true;
+  }
+}
+
+// ==== SCREENSHOT READING (pure logic; takes ImageData-like object) ====
+const SAMPLE_POINTS = [[0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8]];
+
+function median(v) { return v.slice().sort((a, b) => a - b)[Math.floor(v.length / 2)]; }
+
+function cellColor(d, x0, y0, cw, ch, r, c) {
+  const R = [], G = [], B = [];
+  for (const [fx, fy] of SAMPLE_POINTS) {
+    const px = Math.min(d.width - 1, Math.max(0, Math.floor(x0 + (c + fx) * cw)));
+    const py = Math.min(d.height - 1, Math.max(0, Math.floor(y0 + (r + fy) * ch)));
+    const i = (py * d.width + px) * 4;
+    R.push(d.data[i]); G.push(d.data[i + 1]); B.push(d.data[i + 2]);
+  }
+  return [median(R), median(G), median(B)];
+}
+
+function colorDist(a, b) {
+  return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
+}
+
+function cluster(colors, tol) {
+  const centers = [], labels = [];
+  for (const col of colors) {
+    let found = -1;
+    for (let i = 0; i < centers.length; i++) {
+      if (colorDist(col, centers[i]) <= tol) { found = i; break; }
+    }
+    if (found < 0) { centers.push(col); found = centers.length - 1; }
+    labels.push(found);
+  }
+  return { labels, centers };
+}
+
+// Returns {n, regions, centers} or null if the colors don't form exactly n regions.
+function readGrid(d, n, bbox, tol) {
+  const [x0, y0, x1, y1] = bbox || [0, 0, d.width, d.height];
+  const cw = (x1 - x0) / n, ch = (y1 - y0) / n;
+  const colors = [];
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) colors.push(cellColor(d, x0, y0, cw, ch, r, c));
+  const { labels, centers } = cluster(colors, tol);
+  if (centers.length !== n) return null;
+  const regions = [];
+  for (let r = 0; r < n; r++) regions.push(labels.slice(r * n, r * n + n));
+  return { n, regions, centers };
+}
+
+function readBoard(d, n, bbox, tol) {
+  const sizes = n ? [n] : [4, 5, 6, 7, 8, 9, 10, 11, 12];
+  for (const size of sizes) {
+    const g = readGrid(d, size, bbox, tol);
+    if (g) return g;
+  }
+  return null;
+}
+// ==== END PURE LOGIC ==================================================
+
+// ==== UI ==============================================================
+if (typeof document !== "undefined") {
+  const $ = id => document.getElementById(id);
+  let img = null, srcData = null, bbox = null, drag = null, lastN = null;
+
+  function setStatus(msg, kind) {
+    const s = $("status");
+    s.textContent = msg || "";
+    s.className = kind || "";
+  }
+
+  $("file").addEventListener("change", e => {
+    const f = e.target.files[0];
+    if (f) loadImage(f);
+  });
+  $("size").addEventListener("change", () => run());
+  $("tol").addEventListener("input", () => { $("tolval").textContent = $("tol").value; });
+  $("tol").addEventListener("change", () => run());
+  $("toggle").addEventListener("click", () => $("grid").classList.toggle("hidecats"));
+  window.addEventListener("resize", () => sizeCats());
+
+  function loadImage(file) {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => {
+      img = im;
+      const off = document.createElement("canvas");
+      off.width = im.naturalWidth; off.height = im.naturalHeight;
+      const octx = off.getContext("2d", { willReadFrequently: true });
+      octx.drawImage(im, 0, 0);
+      srcData = octx.getImageData(0, 0, off.width, off.height);
+      URL.revokeObjectURL(url);
+      bbox = [0, 0, off.width, off.height];
+      lastN = null;
+      $("stage").hidden = false;
+      draw();
+      run();
+    };
+    im.onerror = () => setStatus("Couldn't open that image.", "err");
+    im.src = url;
+  }
+
+  function draw() {
+    const cv = $("cv");
+    const sc = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
+    cv.width = Math.round(img.naturalWidth * sc);
+    cv.height = Math.round(img.naturalHeight * sc);
+    const ctx = cv.getContext("2d");
+    ctx.drawImage(img, 0, 0, cv.width, cv.height);
+    const [x0, y0, x1, y1] = bbox.map(v => v * sc);
+    ctx.fillStyle = "rgba(0,0,0,.45)";
+    ctx.fillRect(0, 0, cv.width, y0);
+    ctx.fillRect(0, y1, cv.width, cv.height - y1);
+    ctx.fillRect(0, y0, x0, y1 - y0);
+    ctx.fillRect(x1, y0, cv.width - x1, y1 - y0);
+    ctx.strokeStyle = "#ff2d55";
+    ctx.lineWidth = Math.max(2, cv.width / 300);
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    if (lastN) {
+      ctx.lineWidth = Math.max(1, cv.width / 600);
+      ctx.beginPath();
+      for (let i = 1; i < lastN; i++) {
+        const x = x0 + (x1 - x0) * i / lastN, y = y0 + (y1 - y0) * i / lastN;
+        ctx.moveTo(x, y0); ctx.lineTo(x, y1);
+        ctx.moveTo(x0, y); ctx.lineTo(x1, y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  function toImg(e) {
+    const rect = $("cv").getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * img.naturalWidth;
+    const y = (e.clientY - rect.top) / rect.height * img.naturalHeight;
+    return [Math.min(img.naturalWidth, Math.max(0, x)), Math.min(img.naturalHeight, Math.max(0, y))];
+  }
+
+  const cv = $("cv");
+  cv.addEventListener("pointerdown", e => {
+    if (!img) return;
+    cv.setPointerCapture(e.pointerId);
+    drag = { start: toImg(e) };
+  });
+  cv.addEventListener("pointermove", e => {
+    if (!drag) return;
+    const p = toImg(e), s = drag.start;
+    bbox = [Math.min(s[0], p[0]), Math.min(s[1], p[1]), Math.max(s[0], p[0]), Math.max(s[1], p[1])];
+    draw();
+  });
+  function endDrag() {
+    if (!drag) return;
+    drag = null;
+    const [x0, y0, x1, y1] = bbox;
+    if (x1 - x0 < 30 || y1 - y0 < 30) bbox = [0, 0, img.naturalWidth, img.naturalHeight];
+    draw();
+    run();
+  }
+  cv.addEventListener("pointerup", endDrag);
+  cv.addEventListener("pointercancel", endDrag);
+
+  function clearResult() {
+    $("result").hidden = true;
+    $("grid").innerHTML = "";
+    $("log").textContent = "";
+    $("cats").textContent = "";
+    $("grid").classList.remove("hidecats");
+  }
+
+  function renderGrid(res, catCells) {
+    const n = res.n, g = $("grid");
+    g.style.gridTemplateColumns = "repeat(" + n + ", 1fr)";
+    g.innerHTML = "";
+    const cats = new Set(catCells);
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+      const reg = res.regions[r][c];
+      const el = document.createElement("div");
+      el.className = "cell";
+      el.style.background = "rgb(" + res.centers[reg].join(",") + ")";
+      const edge = (rr, cc) => (rr < 0 || cc < 0 || rr >= n || cc >= n) ? false : res.regions[rr][cc] !== reg;
+      el.style.borderRight = (c < n - 1 && edge(r, c + 1)) ? "3px solid #222" : "1px solid rgba(0,0,0,.18)";
+      el.style.borderBottom = (r < n - 1 && edge(r + 1, c)) ? "3px solid #222" : "1px solid rgba(0,0,0,.18)";
+      if (cats.has(r * n + c)) {
+        const s = document.createElement("span");
+        s.textContent = "\u{1F431}";
+        el.appendChild(s);
+      }
+      g.appendChild(el);
+    }
+    $("result").hidden = false;
+    sizeCats();
+  }
+
+  function sizeCats() {
+    const g = $("grid");
+    if (!g.children.length) return;
+    const n = Math.round(Math.sqrt(g.children.length));
+    g.style.fontSize = Math.floor(g.clientWidth / n * 0.62) + "px";
+  }
+
+  function run() {
+    if (!srcData) return;
+    clearResult();
+    const sel = $("size").value;
+    const tol = +$("tol").value;
+    const res = readBoard(srcData, sel === "auto" ? null : +sel, bbox, tol);
+    lastN = res ? res.n : (sel === "auto" ? null : +sel);
+    draw();
+    if (!res) {
+      setStatus("Couldn't find a grid where the number of distinct colors equals the grid size. " +
+                "Check the box around the board, set the grid size, or adjust the color tolerance.", "err");
+      return;
+    }
+    const n = res.n;
+    const sols = countSolutions(res.regions);
+    if (sols.length !== 1) {
+      renderGrid(res, []);
+      setStatus("Found " + sols.length + (sols.length ? "+" : "") + " solutions, but a real puzzle has exactly one. " +
+                "The board was probably misread, so no answer is shown. Compare the grid below to the game, " +
+                "then adjust the box or tolerance.", "err");
+      return;
+    }
+    const solver = new PropagationSolver(res.regions);
+    let solved = false;
+    try { solved = solver.solve(); } catch (err) { solved = false; solver.log.push(String(err.message)); }
+    const catCells = solved ? solver.cats : sols[0].map((c, r) => r * n + c);
+    renderGrid(res, catCells);
+
+    const order = catCells.slice().sort((a, b) => a - b);
+    $("cats").textContent = "Cats: " + order.map(i =>
+      "row " + (Math.floor(i / n) + 1) + " \u2192 col " + (i % n + 1)).join(", ");
+
+    const stats = Object.entries(solver.stats).map(([k, v]) => v + " \u00d7 " + k).join(", ");
+    $("log").textContent = solver.log.join("\n") + "\n\n" +
+      (solved ? "Solved by deduction alone (" + stats + ")."
+              : "Deduction got stuck, so this puzzle needs a technique not built in yet. " +
+                "The answer shown comes from brute-force search and is still valid.");
+    setStatus((solved ? "Solved " : "Solved (by search) ") + n + "\u00d7" + n +
+              " board. Compare the colored grid to the game before placing cats.", "ok");
+  }
+}
+
+if (typeof module !== "undefined") {
+  module.exports = { countSolutions, PropagationSolver, readBoard, readGrid };
+}
+</script>
+</body>
+</html>

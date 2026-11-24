@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StemmeCraft</title>
+<style>
+/* VOICE: playful, outdoorsy, a little handmade
+   IDEA: a voxel survival sandbox you can walk around in
+   PICTURE: the live 3D world, full screen
+   COLOUR and TYPE: sky blue, meadow green, warm wood panels; chunky system sans
+   LAYOUT: full-bleed world, hearts + hotbar bottom centre, wood cards for menus */
+html,body{margin:0;height:100%;overflow:hidden;background:#87bde9;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;user-select:none;-webkit-user-select:none}
+#gl{display:block;width:100vw;height:100vh;cursor:crosshair}
+#cross{position:fixed;left:50%;top:50%;width:20px;height:20px;margin:-10px 0 0 -10px;pointer-events:none}
+#cross::before,#cross::after{content:"";position:absolute;background:rgba(255,255,255,.9);box-shadow:0 0 2px rgba(0,0,0,.6)}
+#cross::before{left:9px;top:0;width:2px;height:20px}#cross::after{top:9px;left:0;height:2px;width:20px}
+#cross.mob::before,#cross.mob::after{background:#ff5a4a}
+#prog{position:fixed;left:50%;top:50%;width:44px;height:5px;margin:18px 0 0 -22px;background:rgba(0,0,0,.5);border-radius:3px;display:none;pointer-events:none}
+#prog i{display:block;height:100%;background:#fff;border-radius:3px}
+#bar{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:4px;padding:5px;background:rgba(20,24,18,.55);border-radius:10px;backdrop-filter:blur(4px)}
+.slot{width:46px;height:46px;border:2px solid rgba(255,255,255,.18);border-radius:6px;position:relative;cursor:pointer}
+.slot canvas{width:34px;height:34px;margin:4px;image-rendering:pixelated;border-radius:2px}
+.slot.on{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.35)}
+.slot span{position:absolute;left:4px;top:1px;font-size:10px;color:#fff;text-shadow:0 1px 1px #000}
+.slot b{position:absolute;right:3px;bottom:1px;font-size:12px;color:#fff;text-shadow:0 1px 2px #000}
+#hearts{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);display:flex;gap:2px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.7))}
+#name{position:fixed;bottom:108px;left:50%;transform:translateX(-50%);color:#fff;font-weight:600;text-shadow:0 1px 3px #000;transition:opacity .4s;white-space:nowrap}
+#info{position:fixed;left:12px;top:10px;color:#fff;font:13px/1.45 ui-monospace,Menlo,monospace;text-shadow:0 1px 2px #000;pointer-events:none;white-space:pre-line}
+#water{position:fixed;inset:0;background:rgba(25,70,190,.38);pointer-events:none;display:none}
+#hurt{position:fixed;inset:0;pointer-events:none;background:radial-gradient(transparent 40%,rgba(220,20,20,.7));opacity:0;transition:opacity .45s}
+.overlay{position:fixed;inset:0;display:grid;place-items:center;background:rgba(14,26,40,.5);padding:16px;overflow:auto}
+.overlay[hidden]{display:none}
+.card{background:#3b2a1c;color:#f6efe2;border-radius:14px;padding:26px 28px;max-width:460px;width:100%;box-shadow:0 0 0 4px #5c4129,0 20px 50px rgba(0,0,0,.5)}
+.card h1{margin:0 0 4px;font-size:44px;line-height:1.05;color:#9be36a;text-shadow:3px 3px 0 #2b5a17}
+.card h2{margin:0;font-size:28px;color:#ffd98a}
+.card h3{margin:0 0 8px;font-size:16px;color:#ffd98a}
+.card p{margin:0 0 16px;color:#d9cbb4;font-size:15px}
+dl{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;margin:0 0 18px;font-size:14px}
+dt{font-weight:700;color:#ffd98a;white-space:nowrap}dd{margin:0}
+.btns{display:flex;gap:10px;flex-wrap:wrap}
+button{font:600 16px system-ui,sans-serif;min-height:44px;padding:0 20px;border-radius:8px;border:0;cursor:pointer;color:#fff;background:#7a5a3c;box-shadow:inset 0 -4px 0 #4e3622}
+button.go{background:#6dbb3c;box-shadow:inset 0 -4px 0 #3f7d1d}
+button:disabled{opacity:.38;cursor:default}
+button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+#note{margin-top:12px;font-size:13px;color:#c8b89c}
+.wide{max-width:780px}
+.head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:22px}
+@media(max-width:640px){.cols{grid-template-columns:minmax(0,1fr)}}
+.tip{font-size:13px!important;margin:0 0 10px!important}
+#invGrid{display:grid;grid-template-columns:repeat(auto-fill,54px);gap:6px}
+button.item{width:54px;height:54px;min-height:0;padding:0;position:relative;background:#2a1d12;box-shadow:inset 0 0 0 2px #5c4129}
+button.item canvas{width:34px;height:34px;image-rendering:pixelated;display:block;margin:auto}
+button.item span{position:absolute;right:4px;bottom:2px;font-size:12px}
+.recipe{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #5c4129}
+.recipe canvas{width:32px;height:32px;image-rendering:pixelated;flex:none}
+.recipe div{flex:1;font-size:15px}.recipe small{display:block;color:#d9cbb4;font-size:13px}
+.recipe .lack{color:#ff9a86}
+.recipe button{min-height:38px;padding:0 14px;font-size:14px}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="water"></div>
+<div id="hurt"></div>
+<div id="cross"></div>
+<div id="prog"><i></i></div>
+<div id="info"></div>
+<div id="name"></div>
+<div id="hearts"></div>
+<div id="bar"></div>
+<div id="menu" class="overlay">
+  <div class="card">
+    <h1>StemmeCraft</h1>
+    <p>Punch trees, craft tools, build a shelter. Or take the Stemme S12-G parked on the airfield up for a flight. When night falls, the Gloomlings come out.</p>
+    <dl>
+      <dt>Mouse</dt><dd>Look around</dd>
+      <dt>W A S D</dt><dd>Move (Shift to sprint)</dd>
+      <dt>Space</dt><dd>Jump / swim up</dd>
+      <dt>Hold left click</dt><dd>Mine a block / hit a Gloomling</dd>
+      <dt>Right click</dt><dd>Place a block / use a Herb wrap</dd>
+      <dt>E</dt><dd>Backpack and crafting</dd>
+      <dt>1–0 / wheel</dt><dd>Choose hotbar slot</dd>
+      <dt>R</dt><dd>Board / leave the S12-G (stand next to it)</dd>
+      <dt>In the S12-G</dt><dd>Space/Shift throttle up/down, W/S (or ↑/↓) nose down/up, A/D (or ←/→) bank, or steer on the ground. Shift at idle brakes</dd>
+      <dt>F</dt><dd>Fly (creative mode only)</dd>
+      <dt>Esc</dt><dd>Pause</dd>
+    </dl>
+    <div class="btns"><button id="play" class="go">Play</button><button id="mode">Mode: Survival</button><button id="newworld">New world</button></div>
+    <div id="note">Start: log → planks → sticks → wooden pickaxe. Stone needs a pickaxe. Needs a keyboard and mouse.</div>
+  </div>
+</div>
+<div id="craft" class="overlay" hidden>
+  <div class="card wide">
+    <div class="head"><h2>Backpack</h2><button id="closeCraft">Close (E)</button></div>
+    <div class="cols">
+      <section><h3>Items</h3><p class="tip">Click an item to put it in your selected hotbar slot.</p><div id="invGrid"></div></section>
+      <section><h3>Crafting</h3><div id="recipes"></div></section>
+    </div>
+  </div>
+</div>
+<div id="dead" class="overlay" hidden>
+  <div class="card">
+    <h2>You were knocked out</h2>
+    <p>The Gloomlings got you. You keep everything in your backpack.</p>
+    <button id="respawn" class="go">Respawn</button>
+  </div>
+</div>
+<script>
+{
+const W=256,D=256,H=64,CS=16,SEA=22,NCX=W/CS,NCZ=D/CS;
+const AIR=0,GRASS=1,DIRT=2,STONE=3,SAND=4,WATER=5,LOG=6,LEAVES=7,PLANKS=8,COBBLE=9,GLASS=10,BRICK=11;
+const RUNWAY=12,RUNMARK=13;
+const STICK=20,WPICK=21,SPICK=22,WSWORD=23,SSWORD=24,WRAP=25;
+const NAME={1:'Grass',2:'Dirt',3:'Stone',4:'Sand',6:'Log',7:'Leaves',8:'Planks',9:'Cobblestone',10:'Glass',11:'Brick',12:'Runway',13:'Runway',20:'Stick',21:'Wooden pickaxe',22:'Stone pickaxe',23:'Wooden sword',24:'Stone sword',25:'Herb wrap'};
+const TILES={1:[0,1,2],2:[2,2,2],3:[3,3,3],4:[4,4,4],5:[5,5,5],6:[7,6,7],7:[8,8,8],8:[9,9,9],9:[10,10,10],10:[11,11,11],11:[12,12,12],12:[13,13,13],13:[14,13,13]};
+const ALL=[GRASS,DIRT,STONE,COBBLE,PLANKS,LOG,LEAVES,GLASS,BRICK,SAND];
+const HARD={1:.5,2:.5,3:2,4:.5,6:1.3,7:.25,8:1.2,9:2,10:.4,11:2,12:2,13:2};
+const NEEDPICK=new Set([STONE,COBBLE,BRICK,RUNWAY,RUNMARK]);
+const RECIPES=[
+ {out:PLANKS,n:4,in:[[LOG,1]]},
+ {out:STICK,n:4,in:[[PLANKS,2]]},
+ {out:WPICK,n:1,in:[[PLANKS,3],[STICK,2]]},
+ {out:WSWORD,n:1,in:[[PLANKS,2],[STICK,1]]},
+ {out:SPICK,n:1,in:[[COBBLE,3],[STICK,2]]},
+ {out:SSWORD,n:1,in:[[COBBLE,2],[STICK,1]]},
+ {out:WRAP,n:1,in:[[LEAVES,4]]},
+ {out:GLASS,n:2,in:[[SAND,3]]},
+ {out:BRICK,n:4,in:[[COBBLE,2],[DIRT,2]]}];
+const opaque=id=>id!==AIR&&id!==WATER&&id!==LEAVES&&id!==GLASS;
+const solid=id=>id!==AIR&&id!==WATER;
+const world=new Uint8Array(W*D*H);
+const idx=(x,y,z)=>(y*D+z)*W+x;
+const get=(x,y,z)=>(x<0||z<0||y<0||x>=W||z>=D||y>=H)?0:world[idx(x,y,z)];
+const setB=(x,y,z,v)=>{if(x>=0&&z>=0&&y>=0&&x<W&&z<D&&y<H)world[idx(x,y,z)]=v};
+
+function mulberry(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+let seed=(Math.random()*1e9)|0;
+function hash(x,z){let h=Math.imul(x,374761393)+Math.imul(z,668265263)+Math.imul(seed,1442695041)|0;h=Math.imul(h^(h>>>13),1274126177);return((h^(h>>>16))>>>0)/4294967296}
+function vnoise(x,z){const xi=Math.floor(x),zi=Math.floor(z),xf=x-xi,zf=z-zi,u=xf*xf*(3-2*xf),v=zf*zf*(3-2*zf);
+  const a=hash(xi,zi),b=hash(xi+1,zi),c=hash(xi,zi+1),d=hash(xi+1,zi+1);return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v}
+function fbm(x,z){let s=0,a=1,f=1,n=0;for(let i=0;i<4;i++){s+=vnoise(x*f,z*f)*a;n+=a;a*=.5;f*=2}return s/n}
+
+function generate(){
+  world.fill(0);const rnd=mulberry(seed);const hm=new Int16Array(W*D);
+  for(let z=0;z<D;z++)for(let x=0;x<W;x++){
+    const n=fbm(x/46,z/46),m=fbm(x/17+300,z/17+300);
+    let h=Math.floor(SEA+(n-.5)*62+(m-.5)*7);h=Math.max(3,Math.min(H-14,h));hm[z*W+x]=h;
+    const beach=h<=SEA+1;
+    for(let y=0;y<=h;y++){let id=STONE;if(y===h)id=beach?SAND:(h>40?STONE:GRASS);else if(y>h-4)id=beach?SAND:DIRT;setB(x,y,z,id)}
+    for(let y=h+1;y<=SEA;y++)setB(x,y,z,WATER);
+  }
+  for(let i=0;i<1100;i++){
+    const x=2+Math.floor(rnd()*(W-4)),z=2+Math.floor(rnd()*(D-4)),h=hm[z*W+x];
+    if(get(x,h,z)!==GRASS)continue;
+    const th=4+Math.floor(rnd()*2),top=h+th;
+    for(let y=top-1;y<=top+2;y++){const r=y<=top?2:1;
+      for(let dz=-r;dz<=r;dz++)for(let dx=-r;dx<=r;dx++){
+        if(Math.abs(dx)===r&&Math.abs(dz)===r&&(y>top||rnd()<.5))continue;
+        if(get(x+dx,y,z+dz)===AIR)setB(x+dx,y,z+dz,LEAVES)}}
+    for(let y=h+1;y<=top;y++)setB(x,y,z,LOG);
+  }
+  buildAirfield(hm);
+}
+const AF={x0:86,x1:170,z0:113,z1:144,zc:128,level:SEA+3};
+function buildAirfield(hm){let s=0,n=0;for(let z=AF.z0;z<AF.z1;z++)for(let x=AF.x0;x<AF.x1;x++){s+=hm[z*W+x];n++}
+  const lv=AF.level=Math.max(SEA+2,Math.min(H-20,Math.round(s/n)));
+  for(let z=AF.z0;z<AF.z1;z++)for(let x=AF.x0;x<AF.x1;x++)for(let y=1;y<H;y++){
+    let id;const rw=Math.abs(z-AF.zc)<=3&&x>=AF.x0+4&&x<AF.x1-4;
+    if(y>lv)id=AIR;else if(y===lv)id=rw?(z===AF.zc&&x%8<4?RUNMARK:RUNWAY):GRASS;else if(y>lv-4)id=DIRT;else{const c=get(x,y,z);id=solid(c)?c:STONE}
+    setB(x,y,z,id)}}
+
+/* ---------- procedural texture atlas ---------- */
+const atlas=document.createElement('canvas');atlas.width=256;atlas.height=16;
+const actx=atlas.getContext('2d'),img=actx.createImageData(256,16),R=mulberry(4242);
+function paint(t,f){for(let y=0;y<16;y++)for(let x=0;x<16;x++){const c=f(x,y,R()),i=(y*256+t*16+x)*4;img.data[i]=c[0];img.data[i+1]=c[1];img.data[i+2]=c[2];img.data[i+3]=c.length>3?c[3]:255}}
+const vary=(r,g,b,n,k)=>{const s=1+(n-.5)*k;return[r*s,g*s,b*s]};
+const edge=[];for(let x=0;x<16;x++)edge.push(3+Math.floor(R()*3));
+paint(0,(x,y,n)=>vary(96,162,54,n,.38));
+paint(1,(x,y,n)=>y<edge[x]?vary(96,162,54,n,.38):vary(134,96,67,n,.4));
+paint(2,(x,y,n)=>vary(134,96,67,n,.4));
+paint(3,(x,y,n)=>vary(128,128,130,n,.3));
+paint(4,(x,y,n)=>vary(220,207,152,n,.14));
+paint(5,(x,y,n)=>[...vary(46,98,214,n,.18),165]);
+paint(6,(x,y,n)=>vary(x%5===0?78:108,x%5===0?58:80,x%5===0?34:48,n,.25));
+paint(7,(x,y,n)=>{const d=Math.hypot(x-7.5,y-7.5);return d>6.6?vary(95,72,42,n,.2):(Math.floor(d*1.2)%2?vary(186,152,96,n,.1):vary(160,126,76,n,.1))});
+paint(8,(x,y,n)=>n<.17?[0,0,0,0]:vary(52,124,38,R(),.55));
+paint(9,(x,y,n)=>(y%4===3||x===(Math.floor(y/4)*6+3)%16)?[120,88,50]:vary(184,144,88,n,.12));
+const pts=[];for(let i=0;i<11;i++)pts.push([R()*16,R()*16,.8+R()*.35]);
+paint(10,(x,y,n)=>{let d1=99,d2=99,c=1;for(const p of pts)for(let ox=-16;ox<=16;ox+=16)for(let oy=-16;oy<=16;oy+=16){const d=Math.hypot(x+.5-p[0]-ox,y+.5-p[1]-oy);if(d<d1){d2=d1;d1=d;c=p[2]}else if(d<d2)d2=d}
+  return d2-d1<1.1?[68,68,70]:vary(128*c,128*c,130*c,n,.22)});
+paint(11,(x,y,n)=>(x===0||y===0||x===15||y===15)?[214,232,240,255]:((x-y===5||x-y===6)&&x>2&&x<11)?[255,255,255,255]:[0,0,0,0]);
+paint(12,(x,y,n)=>{const row=Math.floor(y/4);return(y%4===3||(x+(row%2)*4)%8===7)?vary(198,192,180,n,.1):vary(166,72,52,n,.25)});
+paint(13,(x,y,n)=>vary(62,64,68,n,.25));
+paint(14,(x,y,n)=>(y>=6&&y<=9&&x<10)?vary(236,236,230,n,.06):vary(62,64,68,n,.25));
+actx.putImageData(img,0,0);
+
+/* ---------- WebGL ---------- */
+const cv=document.getElementById('gl');
+const gl=cv.getContext('webgl',{alpha:false,antialias:false});
+if(!gl){document.getElementById('note').textContent='Your browser does not support WebGL, so the game cannot start.';throw 0}
+function prog(vs,fs){const p=gl.createProgram();for(const[t,s]of[[gl.VERTEX_SHADER,vs],[gl.FRAGMENT_SHADER,fs]]){const sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))console.log(gl.getShaderInfoLog(sh));gl.attachShader(p,sh)}
+  gl.bindAttribLocation(p,0,'aPos');gl.linkProgram(p);return p}
+const P1=prog(`attribute vec3 aPos;attribute vec2 aUV;attribute float aShade;uniform mat4 uProj,uView;varying vec2 vUV;varying float vShade,vDist;
+void main(){vec4 v=uView*vec4(aPos,1.);vDist=length(v.xyz);gl_Position=uProj*v;vUV=aUV;vShade=aShade;}`,
+`precision mediump float;uniform sampler2D uTex;uniform vec3 uFog;uniform vec2 uFogR;uniform float uLight;varying vec2 vUV;varying float vShade,vDist;
+void main(){vec4 c=texture2D(uTex,vUV);if(c.a<.1)discard;float f=clamp((vDist-uFogR.x)/(uFogR.y-uFogR.x),0.,1.);gl_FragColor=vec4(mix(c.rgb*vShade*uLight,uFog,f),c.a);}`);
+const P2=prog(`attribute vec3 aPos;uniform mat4 uProj,uView;void main(){gl_Position=uProj*uView*vec4(aPos,1.);}`,
+`precision mediump float;void main(){gl_FragColor=vec4(.06,.06,.06,1.);}`);
+const P3=prog(`attribute vec3 aPos;attribute vec4 aCol;uniform mat4 uProj,uView;varying vec4 vCol;varying float vDist;
+void main(){vec4 v=uView*vec4(aPos,1.);vDist=length(v.xyz);gl_Position=uProj*v;vCol=aCol;}`,
+`precision mediump float;uniform vec3 uFog;uniform vec2 uFogR;uniform float uLight;varying vec4 vCol;varying float vDist;
+void main(){float f=clamp((vDist-uFogR.x)/(uFogR.y-uFogR.x),0.,1.);gl_FragColor=vec4(mix(mix(vCol.rgb*uLight,vCol.rgb,vCol.a),uFog,f),1.);}`);
+const L={uv:gl.getAttribLocation(P1,'aUV'),sh:gl.getAttribLocation(P1,'aShade'),proj:gl.getUniformLocation(P1,'uProj'),view:gl.getUniformLocation(P1,'uView'),
+  fog:gl.getUniformLocation(P1,'uFog'),fogR:gl.getUniformLocation(P1,'uFogR'),proj2:gl.getUniformLocation(P2,'uProj'),view2:gl.getUniformLocation(P2,'uView'),light:gl.getUniformLocation(P1,'uLight'),
+  col:gl.getAttribLocation(P3,'aCol'),proj3:gl.getUniformLocation(P3,'uProj'),view3:gl.getUniformLocation(P3,'uView'),fog3:gl.getUniformLocation(P3,'uFog'),fogR3:gl.getUniformLocation(P3,'uFogR'),light3:gl.getUniformLocation(P3,'uLight')};
+const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,atlas);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+
+/* ---------- meshing ---------- */
+const FACES=[
+ {n:[1,0,0],l:.8,c:[[1,0,1],[1,0,0],[1,1,0],[1,1,1]]},{n:[-1,0,0],l:.8,c:[[0,0,0],[0,0,1],[0,1,1],[0,1,0]]},
+ {n:[0,1,0],l:1,c:[[0,1,1],[1,1,1],[1,1,0],[0,1,0]]},{n:[0,-1,0],l:.5,c:[[0,0,0],[1,0,0],[1,0,1],[0,0,1]]},
+ {n:[0,0,1],l:.65,c:[[0,0,1],[1,0,1],[1,1,1],[0,1,1]]},{n:[0,0,-1],l:.65,c:[[1,0,0],[0,0,0],[0,1,0],[1,1,0]]}];
+for(const F of FACES)F.t=[0,1,2].filter(a=>F.n[a]===0);
+const AOS=[.45,.64,.82,1];
+const chunks=[];for(let i=0;i<NCX*NCZ;i++)chunks.push({o:{buf:gl.createBuffer(),n:0},w:{buf:gl.createBuffer(),n:0}});
+const occ=(x,y,z)=>opaque(get(x,y,z))?1:0;
+function buildChunk(cx,cz){
+  const o=[],w=[];
+  for(let y=0;y<H;y++)for(let z=cz*CS;z<cz*CS+CS;z++)for(let x=cx*CS;x<cx*CS+CS;x++){
+    const id=world[idx(x,y,z)];if(!id)continue;
+    for(let f=0;f<6;f++){
+      const F=FACES[f],bx=x+F.n[0],by=y+F.n[1],bz=z+F.n[2],nb=get(bx,by,bz);
+      const draw=id===WATER?nb===AIR:(!opaque(nb)&&!(nb===id&&id===GLASS));
+      if(!draw)continue;
+      const tile=TILES[id][f===2?0:f===3?2:1],u0=tile/16+.0004,u1=(tile+1)/16-.0004;
+      const uv=[[u0,1],[u1,1],[u1,0],[u0,0]],ao=[3,3,3,3];
+      if(id!==WATER)for(let c=0;c<4;c++){
+        const p=F.c[c],a0=F.t[0],a1=F.t[1],d0=p[a0]?1:-1,d1=p[a1]?1:-1;
+        const q1=[bx,by,bz],q2=[bx,by,bz],q3=[bx,by,bz];q1[a0]+=d0;q2[a1]+=d1;q3[a0]+=d0;q3[a1]+=d1;
+        const s1=occ(q1[0],q1[1],q1[2]),s2=occ(q2[0],q2[1],q2[2]),s3=occ(q3[0],q3[1],q3[2]);
+        ao[c]=s1&&s2?0:3-(s1+s2+s3);
+      }
+      const arr=id===WATER?w:o,order=(ao[0]+ao[2]<ao[1]+ao[3])?[1,2,3,1,3,0]:[0,1,2,0,2,3];
+      const drop=id===WATER&&get(x,y+1,z)!==WATER?.12:0;
+      for(const k of order){const p=F.c[k];arr.push(x+p[0],y+p[1]-(p[1]?drop:0),z+p[2],uv[k][0],uv[k][1],F.l*AOS[ao[k]])}
+    }
+  }
+  const c=chunks[cz*NCX+cx];
+  for(const[b,a]of[[c.o,o],[c.w,w]]){gl.bindBuffer(gl.ARRAY_BUFFER,b.buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(a),gl.STATIC_DRAW);b.n=a.length/6}
+}
+
+function buildAll(){for(let cz=0;cz<NCZ;cz++)for(let cx=0;cx<NCX;cx++)buildChunk(cx,cz)}
+function remeshAround(x,z){const done=new Set();
+  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){const cx=Math.floor((x+dx)/CS),cz=Math.floor((z+dz)/CS);
+    if(cx<0||cz<0||cx>=NCX||cz>=NCZ)continue;const k=cz*NCX+cx;if(!done.has(k)){done.add(k);buildChunk(cx,cz)}}}
+
+/* ---------- math ---------- */
+function persp(fov,a,n,f){const t=1/Math.tan(fov/2),nf=1/(n-f);return new Float32Array([t/a,0,0,0,0,t,0,0,0,0,(f+n)*nf,-1,0,0,2*f*n*nf,0])}
+function viewM(e,f){let s=[-f[2],0,f[0]];const sl=Math.hypot(s[0],s[2]);s=[s[0]/sl,0,s[2]/sl];
+  const u=[s[1]*f[2]-s[2]*f[1],s[2]*f[0]-s[0]*f[2],s[0]*f[1]-s[1]*f[0]];const dt=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+  return new Float32Array([s[0],u[0],-f[0],0,s[1],u[1],-f[1],0,s[2],u[2],-f[2],0,-dt(s,e),-dt(u,e),dt(f,e),1])}
+
+/* ---------- item icons ---------- */
+const iconCache={};
+function icon(id){if(iconCache[id])return iconCache[id];const c=document.createElement('canvas');c.width=c.height=16;const g=c.getContext('2d');
+  if(TILES[id])g.drawImage(atlas,TILES[id][1]*16,0,16,16,0,0,16,16);
+  else{const line=(x0,y0,x1,y1,col,w)=>{const n=Math.max(Math.abs(x1-x0),Math.abs(y1-y0));g.fillStyle=col;for(let i=0;i<=n;i++)g.fillRect(Math.round(x0+(x1-x0)*i/n),Math.round(y0+(y1-y0)*i/n),w,w)};
+    const wood='#8a5a2b',dark='#4a3018';
+    if(id===STICK)line(3,12,12,3,wood,2);
+    if(id===WPICK||id===SPICK){line(2,13,9,6,wood,2);line(5,2,13,10,id===WPICK?'#c99555':'#a3a3a8',2)}
+    if(id===WSWORD||id===SSWORD){line(5,10,13,2,id===WSWORD?'#c99555':'#cfd0d6',2);line(3,8,7,12,dark,2);line(1,14,4,11,wood,2)}
+    if(id===WRAP){g.fillStyle='#4f9a35';g.beginPath();g.arc(8,8,6,0,7);g.fill();g.fillStyle='#8fd16a';g.fillRect(5,4,2,8);g.fillRect(9,4,2,8);g.fillStyle='#f2ead8';g.fillRect(2,7,12,2)}}
+  return iconCache[id]=c}
+
+/* ---------- inventory ---------- */
+let creative=false,slot=0;const inv={};let hot=Array(10).fill(0);
+const bar=document.getElementById('bar'),nameEl=document.getElementById('name'),info=document.getElementById('info'),heartsEl=document.getElementById('hearts');
+const slots=[];
+for(let i=0;i<10;i++){const d=document.createElement('div');d.className='slot';const c=document.createElement('canvas');c.width=c.height=16;
+  const s=document.createElement('span');s.textContent=(i+1)%10;const b=document.createElement('b');d.append(c,s,b);
+  d.addEventListener('mousedown',e=>{e.stopPropagation();pick(i)});bar.append(d);slots.push({d,c,b})}
+function drawBar(){hot.forEach((id,i)=>{const s=slots[i],g=s.c.getContext('2d');g.clearRect(0,0,16,16);if(id)g.drawImage(icon(id),0,0);
+  const n=creative?0:(inv[id]||0);s.b.textContent=id&&n>1?n:'';s.d.classList.toggle('on',i===slot);s.d.title=id?NAME[id]:''})}
+let msgT=0;function msg(t){nameEl.textContent=t;nameEl.style.opacity=1;clearTimeout(msgT);msgT=setTimeout(()=>nameEl.style.opacity=0,1400)}
+function pick(i){slot=(i+10)%10;drawBar();if(hot[slot])msg(NAME[hot[slot]])}
+function addItem(id,n){if(creative)return;inv[id]=(inv[id]||0)+n;if(!hot.includes(id)){const i=hot.indexOf(0);if(i>=0)hot[i]=id}drawBar()}
+function useItem(id){if(creative)return;inv[id]--;if(inv[id]<=0){delete inv[id];const i=hot.indexOf(id);if(i>=0)hot[i]=0}drawBar()}
+const have=id=>creative?Infinity:(inv[id]||0);
+function setMode(c){creative=c;if(c)hot=[...ALL];else{hot=Array(10).fill(0);for(const id of Object.keys(inv).map(Number)){const i=hot.indexOf(0);if(i>=0)hot[i]=id}P.fly=false}
+  document.getElementById('mode').textContent='Mode: '+(c?'Creative':'Survival');heartsEl.style.display=c?'none':'flex';drawBar()}
+
+/* ---------- player ---------- */
+const P={x:0,y:0,z:0,vy:0,hw:.3,h:1.8,yaw:0,pitch:-.2,ground:false,wall:false,fly:false,hp:20,max:20,kx:0,kz:0,regen:0,regAcc:0};
+function collideE(x,y,z,hw,h){
+  for(let bx=Math.floor(x-hw);bx<=Math.floor(x+hw);bx++)for(let bz=Math.floor(z-hw);bz<=Math.floor(z+hw);bz++){
+    if(bx<0||bz<0||bx>=W||bz>=D)return true;
+    for(let by=Math.floor(y);by<=Math.floor(y+h-.01);by++)if(solid(get(bx,by,bz)))return true}
+  return false}
+function moveE(e,a,d){if(!d)return;e[a]+=d;if(!collideE(e.x,e.y,e.z,e.hw,e.h))return;
+  if(a==='y'){if(d<0){e.y=Math.floor(e.y)+1;e.ground=true}else e.y=Math.floor(e.y+e.h)-e.h-.001;e.vy=0}
+  else{e.wall=true;if(d>0)e[a]=Math.floor(e[a]+e.hw)-e.hw-.001;else e[a]=Math.floor(e[a]-e.hw)+1+e.hw+.001}}
+function physics(e,vx,vz,dt){const dx=vx*dt,dy=e.vy*dt,dz=vz*dt,n=Math.max(1,Math.ceil(Math.max(Math.abs(dx),Math.abs(dy),Math.abs(dz))/.4));
+  e.ground=false;e.wall=false;for(let i=0;i<n;i++){moveE(e,'x',dx/n);moveE(e,'y',dy/n);moveE(e,'z',dz/n)}}
+function spawn(){P.x=AF.x0+3.5;P.z=AF.zc+.5;P.yaw=-Math.PI/2;P.pitch=-.1;let y=H-1;const bx=Math.floor(P.x),bz=Math.floor(P.z);while(y>0&&get(bx,y,bz)===AIR)y--;P.y=y+1.01;P.vy=0;P.kx=P.kz=0;
+  while(collideE(P.x,P.y,P.z,P.hw,P.h)&&P.y<H)P.y+=1}
+const plane={x:0,y:0,z:0,yaw:0,pitch:0,roll:0,speed:0,thr:0,prop:0,pa:0,ground:true,mx:0,my:0};let inPlane=false;
+function resetPlane(){Object.assign(plane,{x:AF.x0+13.5,z:AF.zc+.5,y:AF.level+1+.95,yaw:-Math.PI/2,pitch:0,roll:0,speed:0,thr:0,prop:0,ground:true,mx:0,my:0})}
+function groundAt(x,y,z){const bx=Math.floor(x),bz=Math.floor(z);if(bx<0||bz<0||bx>=W||bz>=D)return -1e9;
+  for(let by=Math.min(H-1,Math.floor(y));by>=0;by--)if(get(bx,by,bz)!==AIR)return by+1;return -1e9}
+function planeT(pl,ex){const cy=Math.cos(pl.yaw),sy=Math.sin(pl.yaw),cp=Math.cos(pl.pitch),sp=Math.sin(pl.pitch),cr=Math.cos(pl.roll),sr=Math.sin(pl.roll);
+  return(x,y,z)=>{if(ex){const r=ex(x,y,z);x=r[0];y=r[1];z=r[2]}const x1=x*cr+y*sr,y1=-x*sr+y*cr,y2=y1*cp-z*sp,z2=y1*sp+z*cp;return[pl.x+x1*cy+z2*sy,pl.y+y2,pl.z-x1*sy+z2*cy]}}
+function planeDir(pl){return planeT({yaw:pl.yaw,pitch:pl.pitch,roll:pl.roll,x:0,y:0,z:0})(0,0,-1)}
+function updatePlane(dt){const pl=plane,STALL=14;
+  const k=keys,shift=k.ShiftLeft||k.ShiftRight;
+  if(inPlane){if(k.Space)pl.thr=Math.min(1,pl.thr+dt*.5);if(shift)pl.thr=Math.max(0,pl.thr-dt*.5)}
+  const ri=inPlane?((k.KeyD||k.ArrowRight)?1:0)-((k.KeyA||k.ArrowLeft)?1:0):0,pi=inPlane?((k.KeyS||k.ArrowDown)?1:0)-((k.KeyW||k.ArrowUp)?1:0):0;
+  pl.prop+=((pl.thr>0?1:0)-pl.prop)*Math.min(1,dt*2.5);if(pl.prop>.95)pl.pa+=dt*(10+pl.thr*45);
+  if(pl.ground){
+    pl.roll*=Math.pow(.05,dt);pl.yaw-=ri*.9*dt;
+    const brake=inPlane&&pl.thr===0&&shift;
+    pl.speed=Math.max(0,pl.speed+(pl.thr*4-.0015*pl.speed*pl.speed-(pl.speed>0?(brake?4:.35):0))*dt);
+    if(pl.speed>STALL*.9)pl.pitch=Math.max(0,Math.min(.25,pl.pitch+pi*.5*dt));else pl.pitch=Math.max(0,pl.pitch-dt*.5);
+    const ox=pl.x,oz=pl.z;pl.x+=-Math.sin(pl.yaw)*pl.speed*dt;pl.z+=-Math.cos(pl.yaw)*pl.speed*dt;
+    const g=groundAt(pl.x,pl.y+1,pl.z);
+    if(g>pl.y-.95+1.2){pl.x=ox;pl.z=oz;if(pl.speed>2)msg('Bump! Something is in the way');pl.speed=0}
+    else if(pl.speed>STALL&&pl.pitch>.06){pl.ground=false;msg('Airborne!')}
+    else if(g<pl.y-.95-1.5)pl.ground=false;
+    else pl.y=g+.95;
+  }else{
+    pl.roll=Math.max(-1.1,Math.min(1.1,pl.roll+ri*1.3*dt));if(!ri)pl.roll*=Math.pow(.6,dt);
+    pl.pitch=Math.max(-.8,Math.min(.7,pl.pitch+pi*.7*dt));if(!pi)pl.pitch*=Math.pow(.8,dt);
+    if(pl.speed<STALL)pl.pitch-=dt*(.2+.5*(STALL-pl.speed)/STALL);
+    pl.yaw-=1.3*Math.sin(pl.roll)*dt;
+    const f=planeDir(pl);
+    pl.speed=Math.max(3,Math.min(60,pl.speed+(pl.thr*4-.0015*pl.speed*pl.speed-9.8*f[1])*dt));
+    const sink=.3+Math.max(0,STALL-pl.speed)*.9;
+    pl.x+=f[0]*pl.speed*dt;pl.y+=(f[1]*pl.speed-sink)*dt;pl.z+=f[2]*pl.speed*dt;
+    const g=groundAt(pl.x,pl.y,pl.z);
+    if(pl.y-.95<=g){const vs=sink-f[1]*pl.speed,wet=get(Math.floor(pl.x),g-1,Math.floor(pl.z))===WATER;
+      if(vs>6||Math.abs(pl.roll)>.5||pl.pitch<-.35){msg('Hard landing! The S12-G bounced to a stop');pl.speed*=.2}else msg(wet?'Splashdown! Taxi back to shore':'Nice landing');
+      pl.ground=true;pl.y=g+.95;pl.roll=0;pl.pitch=Math.max(0,Math.min(.15,pl.pitch))}
+    if(Math.hypot(pl.x-W/2,pl.z-D/2)>320){let d=Math.atan2(-(W/2-pl.x),-(D/2-pl.z))-pl.yaw;d=Math.atan2(Math.sin(d),Math.cos(d));pl.yaw+=Math.sign(d)*Math.min(Math.abs(d),dt*.8);
+      if(hintCd<=0){msg('Turning back toward the airfield');hintCd=3}}
+  }
+  if(pl.y<-30||pl.y>400){resetPlane();msg('The S12-G was recovered to the airfield')}
+  if(inPlane){P.x=pl.x;P.y=pl.y-.95;P.z=pl.z;P.vy=0}}
+function exitPlane(){const pl=plane;inPlane=false;pl.thr=0;const w=planeT({...pl,pitch:0,roll:0})(-2,0,-1.6);
+  P.x=w[0];P.z=w[2];P.y=Math.max(0,groundAt(P.x,pl.y+1,P.z));P.vy=0;P.yaw=pl.yaw;P.pitch=-.1;
+  while(collideE(P.x,P.y,P.z,P.hw,P.h)&&P.y<H)P.y+=1}
+const keys={};
+const waterAt=(e,y)=>get(Math.floor(e.x),Math.floor(y),Math.floor(e.z))===WATER;
+function lookDir(){const cp=Math.cos(P.pitch);return[-Math.sin(P.yaw)*cp,Math.sin(P.pitch),-Math.cos(P.yaw)*cp]}
+
+/* ---------- day & night ---------- */
+const DAY=240;let time=0,light=1;
+function dayLight(){const p=(time%DAY)/DAY;if(p<.6)return 1;if(p<.67)return 1-(p-.6)/.07*.78;if(p<.93)return .22;return .22+(p-.93)/.07*.78}
+
+/* ---------- mining & building ---------- */
+let target=null,targetMob=null,mineHeld=false,mine={k:'',p:0},attackCd=0,hintCd=0;
+function ray(o,d,max){
+  let x=Math.floor(o[0]),y=Math.floor(o[1]),z=Math.floor(o[2]);const s=d.map(Math.sign),td=d.map(v=>v?Math.abs(1/v):Infinity);
+  const tm=[0,1,2].map(i=>d[i]>0?(Math.floor(o[i])+1-o[i])*td[i]:d[i]<0?(o[i]-Math.floor(o[i]))*td[i]:Infinity);
+  let px=x,py=y,pz=z,t=0;
+  while(t<=max){const id=get(x,y,z);if(id&&id!==WATER)return{x,y,z,px,py,pz,t};px=x;py=y;pz=z;
+    if(tm[0]<tm[1]&&tm[0]<tm[2]){x+=s[0];t=tm[0];tm[0]+=td[0]}else if(tm[1]<tm[2]){y+=s[1];t=tm[1];tm[1]+=td[1]}else{z+=s[2];t=tm[2];tm[2]+=td[2]}}
+  return null}
+function rayBox(o,d,mn,mx){let t0=0,t1=1e9;for(let i=0;i<3;i++){if(Math.abs(d[i])<1e-9){if(o[i]<mn[i]||o[i]>mx[i])return-1;continue}
+  let a=(mn[i]-o[i])/d[i],b=(mx[i]-o[i])/d[i];if(a>b){const t=a;a=b;b=t}t0=Math.max(t0,a);t1=Math.min(t1,b);if(t0>t1)return-1}return t0}
+function breakBlock(t){const id=get(t.x,t.y,t.z);if(!id||t.y===0)return;setB(t.x,t.y,t.z,AIR);
+  for(const[a,b]of[[1,0],[-1,0],[0,1],[0,-1]])if(get(t.x+a,t.y,t.z+b)===WATER||get(t.x,t.y+1,t.z)===WATER){setB(t.x,t.y,t.z,WATER);break}
+  remeshAround(t.x,t.z);
+  if(!creative){const drop=id===GRASS?DIRT:(id===STONE||id===RUNWAY||id===RUNMARK)?COBBLE:id;addItem(drop,1);if(id===LEAVES&&Math.random()<.2)addItem(STICK,1)}}
+function hitMob(m){if(attackCd>0)return;attackCd=.35;const h=hot[slot];
+  const dmg=h===SSWORD?7:h===WSWORD?5:(h===WPICK||h===SPICK)?3:2;m.hp-=dmg;m.hurt=.25;
+  const dx=m.x-P.x,dz=m.z-P.z,l=Math.hypot(dx,dz)||1;m.kx=dx/l*7;m.kz=dz/l*7;m.vy=5;
+  if(m.hp<=0){mobs.splice(mobs.indexOf(m),1);msg('Gloomling defeated')}}
+function press(btn){
+  if(btn===0){if(targetMob){hitMob(targetMob);return}if(creative){if(target)breakBlock(target)}else mineHeld=true}
+  else if(btn===2){const h=hot[slot];
+    if(h===WRAP){if(!creative&&P.hp<P.max){P.hp=Math.min(P.max,P.hp+6);useItem(WRAP);drawHearts();msg('Healed')}return}
+    if(!target||!TILES[h]||have(h)<1)return;const{px,py,pz}=target,c=get(px,py,pz);if(py>=H||(c!==AIR&&c!==WATER))return;
+    if(px+1>P.x-.3&&px<P.x+.3&&pz+1>P.z-.3&&pz<P.z+.3&&py+1>P.y&&py<P.y+1.8)return;
+    for(const m of mobs)if(px+1>m.x-m.hw&&px<m.x+m.hw&&pz+1>m.z-m.hw&&pz<m.z+m.hw&&py+1>m.y&&py<m.y+m.h)return;
+    setB(px,py,pz,h);useItem(h);remeshAround(px,pz)}}
+const progEl=document.getElementById('prog');
+function updateMining(dt){
+  if(mineHeld&&target&&!targetMob&&!uiOpen){const id=get(target.x,target.y,target.z),k=target.x+','+target.y+','+target.z;
+    if(mine.k!==k)mine={k,p:0};const h=hot[slot];let sp=1;
+    if(NEEDPICK.has(id))sp=h===SPICK?4:h===WPICK?2.5:0;
+    else if(h===SPICK||h===WPICK)sp=1.6;
+    if(!sp){if(hintCd<=0){msg('You need a pickaxe to mine '+NAME[id].toLowerCase());hintCd=1.5}mine.p=0}
+    else{mine.p+=dt*sp/(HARD[id]||1);if(mine.p>=1){breakBlock(target);mine={k:'',p:0}}}}
+  else mine.p=0;
+  progEl.style.display=mine.p>0?'block':'none';progEl.firstChild.style.width=Math.min(100,mine.p*100)+'%'}
+
+/* ---------- health ---------- */
+const hurtEl=document.getElementById('hurt'),deadEl=document.getElementById('dead');let dead=false;
+const HEART='<svg viewBox="0 0 16 16" width="18" height="18"><path d="M8 14.2 1.8 8A3.6 3.6 0 0 1 8 3.3 3.6 3.6 0 0 1 14.2 8Z" fill="F" stroke="#2a0d0d" stroke-width="1.2"/></svg>';
+function drawHearts(){let s='';for(let i=0;i<10;i++){const v=P.hp-i*2;s+=HEART.replace('F',v>=2?'#e8333a':v>=1?'#f29a95':'#3a2626')}heartsEl.innerHTML=s}
+function hurtPlayer(d,nx,nz){P.hp-=d;P.kx=nx*8;P.kz=nz*8;if(!P.fly)P.vy=Math.max(P.vy,5);P.regen=0;drawHearts();
+  hurtEl.style.transition='none';hurtEl.style.opacity=1;requestAnimationFrame(()=>{hurtEl.style.transition='opacity .45s';hurtEl.style.opacity=0});
+  if(P.hp<=0)die()}
+function die(){dead=true;playing=false;mineHeld=false;for(const k in keys)keys[k]=false;if(document.pointerLockElement)document.exitPointerLock();deadEl.hidden=false}
+document.getElementById('respawn').addEventListener('click',()=>{inPlane=false;resetPlane();P.hp=P.max;drawHearts();spawn();
+  for(let i=mobs.length-1;i>=0;i--)if(Math.hypot(mobs[i].x-P.x,mobs[i].z-P.z)<16)mobs.splice(i,1);dead=false;deadEl.hidden=true;start()});
+
+/* ---------- Gloomlings ---------- */
+const mobs=[];let spawnT=2;
+function spawnMob(){const a=Math.random()*6.283,r=16+Math.random()*14,x=Math.floor(P.x+Math.cos(a)*r),z=Math.floor(P.z+Math.sin(a)*r);
+  if(x<1||z<1||x>=W-1||z>=D-1)return;let y=H-1;while(y>0&&get(x,y,z)===AIR)y--;const top=get(x,y,z);
+  if(!top||top===WATER||top===LEAVES)return;
+  mobs.push({x:x+.5,y:y+1,z:z+.5,vy:0,hw:.4,h:1.25,yaw:0,hp:12,hurt:0,cd:0,kx:0,kz:0,walk:0,wander:0,wdir:null,ground:false,wall:false})}
+function updateMobs(dt){
+  const night=light<.5;
+  if(night&&mobs.length<9){spawnT-=dt;if(spawnT<=0){spawnT=2.5;spawnMob()}}
+  for(let i=mobs.length-1;i>=0;i--){const m=mobs[i];const dx=P.x-m.x,dz=P.z-m.z,dist=Math.hypot(dx,dz);
+    if(dist>70||m.y<-20||(!night&&Math.random()<dt*.3)){mobs.splice(i,1);continue}
+    let vx=0,vz=0;
+    if(dist<26&&!dead){m.yaw=Math.atan2(-dx,-dz);if(dist>.9){vx=dx/dist*2.7;vz=dz/dist*2.7}}
+    else{m.wander-=dt;if(m.wander<=0){m.wander=2+Math.random()*3;m.wdir=Math.random()<.4?null:Math.random()*6.283}
+      if(m.wdir!==null){m.yaw=m.wdir;vx=-Math.sin(m.wdir)*1.2;vz=-Math.cos(m.wdir)*1.2}}
+    const swim=waterAt(m,m.y+.3);
+    m.vy=swim?Math.min(m.vy+14*dt,2.5):Math.max(m.vy-28*dt,-50);
+    if(m.wall&&(m.ground||swim)&&(vx||vz))m.vy=swim?8.8:8.2;
+    const kd=Math.pow(.01,dt);m.kx*=kd;m.kz*=kd;
+    physics(m,vx+m.kx,vz+m.kz,dt);
+    if(vx||vz)m.walk+=dt*9;
+    m.hurt=Math.max(0,m.hurt-dt);m.cd=Math.max(0,m.cd-dt);
+    if(dist<1.25&&P.y-m.y<1.4&&m.y-P.y<1.8&&m.cd<=0&&!creative&&!dead&&!inPlane){m.cd=1;hurtPlayer(3,dx/(dist||1),dz/(dist||1))}}}
+
+function update(dt){
+  time+=dt;light=dayLight();attackCd=Math.max(0,attackCd-dt);hintCd-=dt;
+  updatePlane(dt);
+  if(inPlane){mine.p=0;progEl.style.display='none';updateMobs(dt);return}
+  const swim=waterAt(P,P.y+.4);
+  let fz=(keys.KeyW?1:0)-(keys.KeyS?1:0),fx=(keys.KeyD?1:0)-(keys.KeyA?1:0);
+  const sy=Math.sin(P.yaw),cy=Math.cos(P.yaw);let vx=-sy*fz+cy*fx,vz=-cy*fz-sy*fx;const l=Math.hypot(vx,vz);
+  const shift=keys.ShiftLeft||keys.ShiftRight,sp=P.fly?11:(shift?6.4:4.3)*(swim?.55:1);
+  if(l){vx=vx/l*sp;vz=vz/l*sp}
+  if(P.fly)P.vy=(keys.Space?9:0)-(shift?9:0);
+  else if(swim){P.vy=Math.max(P.vy-12*dt,-3);if(keys.Space)P.vy=P.wall&&!waterAt(P,P.y+1.7)?9.5:Math.max(P.vy,3.6)}
+  else{P.vy=Math.max(P.vy-28*dt,-50);if(keys.Space&&P.ground)P.vy=8.4}
+  const kd=Math.pow(.004,dt);P.kx*=kd;P.kz*=kd;
+  physics(P,vx+P.kx,vz+P.kz,dt);
+  if(P.y<-20)spawn();
+  updateMining(dt);updateMobs(dt);
+  if(!creative&&P.hp<P.max){P.regen+=dt;if(P.regen>6){P.regAcc+=dt;if(P.regAcc>2){P.regAcc=0;P.hp++;drawHearts()}}}
+}
+
+/* ---------- crafting panel ---------- */
+const craftEl=document.getElementById('craft'),invGrid=document.getElementById('invGrid'),recEl=document.getElementById('recipes');
+let uiOpen=false;
+function iconCanvas(id){const c=document.createElement('canvas');c.width=c.height=16;c.getContext('2d').drawImage(icon(id),0,0);return c}
+function renderCraft(){
+  invGrid.innerHTML='';const ids=creative?ALL:Object.keys(inv).map(Number);
+  if(!ids.length)invGrid.innerHTML='<p class="tip">Empty. Hold left click on a tree trunk to collect logs.</p>';
+  for(const id of ids){const b=document.createElement('button');b.className='item';b.title=NAME[id];b.append(iconCanvas(id));
+    const s=document.createElement('span');s.textContent=creative?'':inv[id];b.append(s);
+    b.addEventListener('click',()=>{const j=hot.indexOf(id);if(j>=0)hot[j]=hot[slot];hot[slot]=id;drawBar()});invGrid.append(b)}
+  recEl.innerHTML='';
+  if(creative){recEl.innerHTML='<p class="tip">Creative mode: every block is free, so there is nothing to craft.</p>';return}
+  for(const r of RECIPES){const ok=r.in.every(([id,n])=>have(id)>=n);const row=document.createElement('div');row.className='recipe';row.append(iconCanvas(r.out));
+    const t=document.createElement('div');t.innerHTML=`${NAME[r.out]}${r.n>1?' ×'+r.n:''}<small>${r.in.map(([id,n])=>`<span class="${have(id)>=n?'':'lack'}">${n} ${NAME[id]}</span>`).join(' + ')}</small>`;
+    const b=document.createElement('button');b.className='go';b.textContent='Craft';b.disabled=!ok;
+    b.addEventListener('click',()=>{if(!r.in.every(([id,n])=>have(id)>=n))return;for(const[id,n]of r.in)for(let i=0;i<n;i++)useItem(id);addItem(r.out,r.n);renderCraft()});
+    row.append(t,b);recEl.append(row)}}
+function openCraft(){uiOpen=true;mineHeld=false;for(const k in keys)keys[k]=false;craftEl.hidden=false;renderCraft();if(document.pointerLockElement)document.exitPointerLock()}
+function closeCraft(){uiOpen=false;craftEl.hidden=true;lock()}
+document.getElementById('closeCraft').addEventListener('click',closeCraft);
+
+/* ---------- input ---------- */
+const menu=document.getElementById('menu'),playBtn=document.getElementById('play'),crossEl=document.getElementById('cross');
+let playing=false,locked=false,fallback=false,drag=null;
+function lock(){if(fallback)return;try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(e){}}
+function start(){menu.hidden=true;playing=true;if(!fallback){try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>goFallback())}catch(e){goFallback()}}}
+function goFallback(){if(fallback)return;fallback=true;if(!dead){menu.hidden=true;playing=true}}
+function pause(){playing=false;mineHeld=false;playBtn.textContent='Resume';menu.hidden=false;for(const k in keys)keys[k]=false}
+playBtn.addEventListener('click',start);
+document.getElementById('mode').addEventListener('click',()=>setMode(!creative));
+document.getElementById('newworld').addEventListener('click',()=>{seed=(Math.random()*1e9)|0;generate();buildAll();mobs.length=0;time=0;inPlane=false;resetPlane();
+  for(const k in inv)delete inv[k];P.hp=P.max;drawHearts();setMode(creative);spawn();start()});
+document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===cv;if(!locked&&playing&&!fallback&&!uiOpen&&!dead)pause()});
+document.addEventListener('pointerlockerror',goFallback);
+const look=(mx,my,k)=>{if(!inPlane)turn(mx,my,k)};
+const turn=(mx,my,k)=>{P.yaw-=mx*k;P.pitch=Math.max(-1.55,Math.min(1.55,P.pitch-my*k))};
+cv.addEventListener('mousedown',e=>{if(!playing||uiOpen)return;if(inPlane){if(!locked&&!fallback)lock();else if(fallback)drag={b:-1,m:9};return}
+  if(locked)press(e.button);else if(fallback){drag={b:e.button,m:0};if(e.button===0&&!targetMob)mineHeld=!creative}else lock()});
+window.addEventListener('mousemove',e=>{if(locked)look(e.movementX,e.movementY,.0024);else if(drag){drag.m+=Math.abs(e.movementX)+Math.abs(e.movementY);if(drag.m>5)mineHeld=false;look(e.movementX,e.movementY,.005)}});
+window.addEventListener('mouseup',e=>{if(e.button===0)mineHeld=false;if(drag&&drag.m<5&&(drag.b===2||targetMob||creative))press(drag.b);drag=null});
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+window.addEventListener('wheel',e=>{if(playing&&!uiOpen&&!inPlane)pick(slot+(e.deltaY>0?1:-1))},{passive:true});
+window.addEventListener('keydown',e=>{
+  if(e.code==='KeyE'&&!dead&&!inPlane&&(playing||uiOpen)){uiOpen?closeCraft():openCraft();return}
+  if(uiOpen){if(e.code==='Escape')closeCraft();return}
+  if(!playing)return;keys[e.code]=true;
+  if(/^Digit\d$/.test(e.code))pick((+e.code[5]+9)%10);
+  if(e.code==='KeyR'){if(inPlane){if(plane.ground&&plane.speed<3)exitPlane();else msg('Land and come to a stop before getting out')}
+    else if(Math.hypot(P.x-plane.x,P.z-plane.z)<7&&Math.abs(P.y-(plane.y-.95))<3&&plane.speed<1){inPlane=true;P.fly=false;mineHeld=false;msg('Welcome aboard the Stemme S12-G. Hold Space for throttle')}}
+  if(e.code==='KeyF'&&!inPlane){if(creative){P.fly=!P.fly;P.vy=0}else msg('Flying is only in creative mode')}
+  if(e.code==='KeyP'&&fallback)pause();
+  if(e.code==='Space'||e.code.startsWith('Arrow'))e.preventDefault()});
+window.addEventListener('keyup',e=>{keys[e.code]=false});
+window.addEventListener('blur',()=>{for(const k in keys)keys[k]=false;mineHeld=false});
+
+/* ---------- render ---------- */
+const waterEl=document.getElementById('water'),lineBuf=gl.createBuffer(),mobBuf=gl.createBuffer();
+function resize(){const r=Math.min(devicePixelRatio||1,1.5),w=Math.floor(innerWidth*r),h=Math.floor(innerHeight*r);if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h}}
+function bindMesh(b){gl.bindBuffer(gl.ARRAY_BUFFER,b.buf);gl.vertexAttribPointer(0,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(L.uv,2,gl.FLOAT,false,24,12);gl.vertexAttribPointer(L.sh,1,gl.FLOAT,false,24,20);gl.drawArrays(gl.TRIANGLES,0,b.n)}
+function boxT(a,T,x0,y0,z0,x1,y1,z1,col,em){for(const F of FACES)for(const k of[0,1,2,0,2,3]){const p=F.c[k],w=T(p[0]?x1:x0,p[1]?y1:y0,p[2]?z1:z0),s=em?1:F.l;a.push(w[0],w[1],w[2],col[0]*s,col[1]*s,col[2]*s,em?1:0)}}
+function mobT(m,pv,ang){const cy=Math.cos(m.yaw),sy=Math.sin(m.yaw),ca=Math.cos(ang||0),sa=Math.sin(ang||0);
+  return(x,y,z)=>{if(ang){const yy=y-pv[0],zz=z-pv[1];y=pv[0]+yy*ca-zz*sa;z=pv[1]+yy*sa+zz*ca}return[m.x+x*cy+z*sy,m.y+y,m.z-x*sy+z*cy]}}
+function drawMob(a,m){const sw=Math.sin(m.walk)*.6,T=mobT(m),c=v=>m.hurt>0?[1,.32,.3]:v,dark=c([.2,.12,.28]);
+  for(const[lx,lz,s]of[[-.34,-.3,1],[.14,-.3,-1],[-.34,.14,-1],[.14,.14,1]])boxT(a,mobT(m,[.42,lz+.08],sw*s),lx,0,lz,lx+.2,.42,lz+.16,dark);
+  boxT(a,T,-.4,.36,-.42,.4,.98,.42,c([.33,.2,.45]));boxT(a,T,-.3,.7,-.78,.3,1.22,-.3,c([.41,.27,.53]));
+  boxT(a,T,-.22,.96,-.8,-.08,1.08,-.77,[1,.86,.25],1);boxT(a,T,.08,.96,-.8,.22,1.08,-.77,[1,.86,.25],1);
+  boxT(a,T,-.08,.98,-.16,.08,1.15,0,dark);boxT(a,T,-.08,.98,.14,.08,1.12,.3,dark)}
+// Stemme S12-G, blocky edition. Local axes: -Z nose, +Y up, +X right wing. Origin 0.95 m above the wheels' contact point.
+function drawPlane(a,pl){const T=planeT(pl),WH=[.96,.96,.94],LG=[.78,.8,.83],GL=[.16,.27,.38],BL=[.13,.3,.6],TI=[.12,.12,.13];
+  const B=(x0,y0,z0,x1,y1,z1,c,e)=>boxT(a,T,x0,y0,z0,x1,y1,z1,c,e);
+  const S=(s,xa,xb,y0,z0,y1,z1,c,e)=>B(Math.min(s*xa,s*xb),y0,z0,Math.max(s*xa,s*xb),y1,z1,c,e);
+  B(-.32,-.28,-3.75,.32,.26,-3.3,WH);            // nose cone (folding prop hides inside)
+  B(-.6,-.5,-3.3,.6,.35,-.6,WH);                 // cockpit section
+  B(-.56,.35,-2.75,.56,.86,-.85,GL);             // side-by-side canopy
+  B(-.58,-.5,-.6,.58,.48,1.3,WH);                // mid-mounted engine bay
+  B(-.62,-.13,-3.25,.62,-.03,1.25,BL);           // cheatline
+  B(-.4,-.36,1.3,.4,.36,2.9,WH);B(-.22,-.2,2.9,.22,.2,4.9,WH); // tail boom
+  B(-.07,.18,3.7,.07,2,4.6,WH);B(-.075,.2,4.6,.075,1.95,4.97,LG); // fin + rudder
+  B(-1.7,1.95,4.05,1.7,2.07,4.75,WH);B(-1.72,1.96,4.75,1.72,2.06,4.97,LG); // T-tail + elevator
+  B(-.08,-.42,4.55,.08,-.2,4.75,TI);             // tail wheel
+  for(const s of[-1,1]){
+    S(s,.55,5,0,-.75,.12,.4,WH);S(s,5,10,.12,-.6,.24,.3,WH);S(s,10,12.4,.3,-.45,.42,.18,WH); // 25 m span, stepped dihedral
+    S(s,12.4,12.52,.3,-.45,.85,.15,WH);              // winglet
+    S(s,12.52,12.6,.4,-.15,.55,0,s<0?[1,.15,.1]:[.1,1,.3],1); // nav lights
+    S(s,.85,1.15,-.95,-.25,-.45,.25,TI);S(s,.92,1.08,-.5,-.05,-.2,.05,LG)} // main gear
+  if(pl.prop>.02){const c=Math.cos(pl.pa),n=Math.sin(pl.pa),L=1*pl.prop,Tp=planeT(pl,(x,y,z)=>[x*c-y*n,x*n+y*c,z]);
+    boxT(a,Tp,-L,-.07,-3.84,L,.07,-3.78,[.22,.22,.24])}}
+let frameN=0;
+function render(){
+  resize();gl.viewport(0,0,cv.width,cv.height);
+  let eye=[P.x,P.y+1.62,P.z],dir=lookDir();
+  if(inPlane){const fx=-Math.sin(plane.yaw),fz=-Math.cos(plane.yaw);eye=[plane.x-fx*16,plane.y+4.5,plane.z-fz*16];
+    while(solid(get(Math.floor(eye[0]),Math.floor(eye[1]),Math.floor(eye[2])))&&eye[1]<H+4)eye[1]+=1;
+    const d=[plane.x-eye[0],plane.y+1.2-eye[1],plane.z-eye[2]],l=Math.hypot(...d);dir=d.map(v=>v/l)}
+  const under=get(Math.floor(eye[0]),Math.floor(eye[1]),Math.floor(eye[2]))===WATER;
+  const k=(light-.22)/.78,sky=under?[.08*light+.02,.2*light+.05,.5*light+.05]:[.04+.49*k,.06+.68*k,.15+.77*k];waterEl.style.display=under?'block':'none';
+  gl.clearColor(sky[0],sky[1],sky[2],1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.enable(gl.DEPTH_TEST);
+  const proj=persp(1.25,cv.width/cv.height,.05,200),view=viewM(eye,dir),fogN=under?1:60,fogF=under?18:130;
+  gl.useProgram(P1);gl.uniformMatrix4fv(L.proj,false,proj);gl.uniformMatrix4fv(L.view,false,view);gl.uniform3fv(L.fog,sky);gl.uniform2f(L.fogR,fogN,fogF);gl.uniform1f(L.light,light);
+  gl.enableVertexAttribArray(0);gl.enableVertexAttribArray(L.uv);gl.enableVertexAttribArray(L.sh);gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.disable(gl.BLEND);gl.depthMask(true);const vis=chunks.map((c,i)=>Math.hypot((i%NCX)*CS+8-eye[0],Math.floor(i/NCX)*CS+8-eye[2])<fogF+24);
+  chunks.forEach((c,i)=>{if(vis[i]&&c.o.n)bindMesh(c.o)});
+  gl.disableVertexAttribArray(L.uv);gl.disableVertexAttribArray(L.sh);
+  {const a=[];for(const m of mobs)drawMob(a,m);drawPlane(a,plane);gl.useProgram(P3);gl.uniformMatrix4fv(L.proj3,false,proj);gl.uniformMatrix4fv(L.view3,false,view);
+    gl.uniform3fv(L.fog3,sky);gl.uniform2f(L.fogR3,fogN,fogF);gl.uniform1f(L.light3,light);
+    gl.bindBuffer(gl.ARRAY_BUFFER,mobBuf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(a),gl.DYNAMIC_DRAW);gl.enableVertexAttribArray(L.col);
+    gl.vertexAttribPointer(0,3,gl.FLOAT,false,28,0);gl.vertexAttribPointer(L.col,4,gl.FLOAT,false,28,12);gl.drawArrays(gl.TRIANGLES,0,a.length/7);gl.disableVertexAttribArray(L.col)}
+  gl.useProgram(P1);gl.enableVertexAttribArray(L.uv);gl.enableVertexAttribArray(L.sh);
+  gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);chunks.forEach((c,i)=>{if(vis[i]&&c.w.n)bindMesh(c.w)});
+  gl.depthMask(true);gl.disable(gl.BLEND);gl.disableVertexAttribArray(L.uv);gl.disableVertexAttribArray(L.sh);
+  target=null;targetMob=null;
+  if(playing&&!uiOpen&&!inPlane){target=ray(eye,dir,6);let best=Math.min(3.5,target?target.t:9);
+    for(const m of mobs){const t=rayBox(eye,dir,[m.x-m.hw,m.y,m.z-m.hw],[m.x+m.hw,m.y+m.h,m.z+m.hw]);if(t>=0&&t<best){best=t;targetMob=m}}}
+  crossEl.classList.toggle('mob',!!targetMob);crossEl.style.display=inPlane?'none':'';
+  if(target&&!targetMob){const e=.003,a=target.x-e,b=target.y-e,c=target.z-e,A=target.x+1+e,B=target.y+1+e,C=target.z+1+e;
+    const v=[a,b,c,A,b,c,A,b,c,A,b,C,A,b,C,a,b,C,a,b,C,a,b,c,a,B,c,A,B,c,A,B,c,A,B,C,A,B,C,a,B,C,a,B,C,a,B,c,a,b,c,a,B,c,A,b,c,A,B,c,A,b,C,A,B,C,a,b,C,a,B,C];
+    gl.useProgram(P2);gl.uniformMatrix4fv(L.proj2,false,proj);gl.uniformMatrix4fv(L.view2,false,view);
+    gl.bindBuffer(gl.ARRAY_BUFFER,lineBuf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(v),gl.DYNAMIC_DRAW);gl.vertexAttribPointer(0,3,gl.FLOAT,false,12,0);gl.drawArrays(gl.LINES,0,24)}
+  if(++frameN%8===0){const p=(time%DAY)/DAY,day=Math.floor(time/DAY)+1,fmt=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
+    const clock=p<.6?`Day ${day} · night in ${fmt((.6-p)*DAY)}`:p<.95?`Night ${day} · sunrise in ${fmt((.95-p)*DAY)}`:`Day ${day+1} · sunrise`;
+    info.textContent=`${clock}${mobs.length?' · Gloomlings: '+mobs.length:''}\n${Math.floor(P.x)}, ${Math.floor(P.y)}, ${Math.floor(P.z)}${creative?' · creative':''}${P.fly?' · flying':''}${inPlane?`\nStemme S12-G · ${Math.round(plane.speed*1.944)} kt · alt ${Math.max(0,Math.round(plane.y-.95-AF.level-1))} m · throttle ${Math.round(plane.thr*100)}% · ${plane.prop>.95?'prop out':'prop folded'}\nSpace/Shift throttle · W/S nose down/up · A/D bank · R to get out when stopped`:(Math.hypot(P.x-plane.x,P.z-plane.z)<7?'\nPress R to board the Stemme S12-G':'')}${fallback?'\nMouse capture is blocked here: drag to look, hold still to mine, P pauses.':''}`}
+}
+let last=performance.now();
+function frame(t){const dt=Math.min(.05,(t-last)/1000);last=t;if(playing)update(dt);render();requestAnimationFrame(frame)}
+generate();buildAll();resetPlane();spawn();setMode(false);drawHearts();requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>
